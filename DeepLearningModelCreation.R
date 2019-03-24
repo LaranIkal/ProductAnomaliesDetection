@@ -113,7 +113,7 @@ testingData = cbind( MSE = testMSE$Reconstruction.MSE , testingData )
 
 anomalies = testingData[ testingData$MSE >= .01,  ]
 
-if( dim(anomalies)[1] ){
+if( dim(anomalies)[1] > 0 ){
   cat( "Anomalies detected in the sample data, station needs maintenance." )
 }
 
