@@ -98,7 +98,9 @@ trainingModelNew = h2o.deeplearning( x = featureNames, training_frame = training
 
 
 
+#######################################
 # Check our testing data for anomalies.
+#######################################
 
 # Convert our testing data frame to H2O format.
 testingDataH2O = as.h2o( testingData, destination_frame = "test_hex" )
@@ -111,8 +113,10 @@ testMSE = as.data.frame( h2o.anomaly( trainingModelNew
 # Binding our data.
 testingData = cbind( MSE = testMSE$Reconstruction.MSE , testingData )
 
+# Filter testing data using the MSE value set as minimum.
 anomalies = testingData[ testingData$MSE >= .01,  ]
 
+# When anomalies detected, send a notice to maintenance area.
 if( dim(anomalies)[1] > 0 ){
   cat( "Anomalies detected in the sample data, station needs maintenance." )
 }
