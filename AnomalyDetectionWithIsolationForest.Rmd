@@ -1,0 +1,148 @@
+---
+title: "Using R and H2O Isolation Forest to identify product anomalies during the manufacturing process."
+author: "Carlos Kassab"
+date: "2019-May-11"
+output: html_document
+---
+
+```{r Initial Anomalies Analysis}
+# Loading libraries
+suppressWarnings( suppressMessages( library( h2o ) ) ) 
+
+
+# Reading data file
+setwd( "/tmp" )
+allData = read.csv( "secom.data", sep = " ", header = FALSE, encoding = "UTF-8" )
+
+################################################################################
+# Dataset fixing, there are a lot of NaN records
+################################################################################
+
+  if( dim(na.omit(allData))[1] == 0 ){
+    for( colNum in 1:dim( allData )[2]   ){
+      
+      # Get valid values from the actual column values
+      ValidColumnValues = allData[,colNum][!is.nan( allData[, colNum] )]
+  
+      # Check each value in the actual active column.
+      for( rowNum in 1:dim( allData )[1]   ){
+        
+        # cat( "Processing row:", rowNum
+        #     , ", Column:", colNum
+        #     , "Data:", allData[rowNum, colNum], "\n" 
+        #     )
+        
+        if( is.nan( allData[rowNum, colNum] ) ) {
+          
+          # Assign random valid value to actual row,column with NA value
+          allData[rowNum, colNum] = 
+            ValidColumnValues[ 
+                              floor( 
+                                runif( 1
+                                       , min = 1
+                                       , max = length( ValidColumnValues ) 
+                                      ) 
+                                ) 
+                              ]
+        }
+      }
+    }
+  }
+
+# spliting all data, the first 90% for training and the rest 10% for testing our model.
+trainingData = allData[1:floor(dim(allData)[1]*.9),]
+testingData = allData[(floor(dim(allData)[1]*.9)+1):dim(allData)[1],]
+
+
+################################################################################
+# Creating Anomaly Detection Model
+################################################################################
+
+  h2o.init( nthreads = -1, max_mem_size = "5G" )
+  h2o.no_progress()  # Disable progress bars for Rmd
+  h2o.removeAll() ## Removes the data from the h2o cluster in preparation for our final model.
+  
+  # Convert the training dataset to H2O format.
+  trainingData_hex = as.h2o( trainingData, destination_frame = "train_hex" )
+  
+  # Build an Isolation forest model
+  trainingModel = h2o.isolationForest( training_frame = trainingData_hex
+                                       , sample_rate = 0.1
+                                       , max_depth = 32
+                                       , ntrees = 100
+                                      )
+  
+  # According to H2O doc: 
+  # http://docs.h2o.ai/h2o/latest-stable/h2o-docs/data-science/if.html
+  #
+  # Isolation Forest is similar in principle to Random Forest and is built on the basis of decision trees. 
+  
+  # Isolation Forest creates multiple decision trees to isolate observations.
+  # 
+  # Trees are split randomly, The assumption is that:
+  #   
+  #   IF ONE UNIT MEASUREMENTS ARE SIMILAR TO OTHERS,
+  #   IT WILL TAKE MORE RANDOM SPLITS TO ISOLATE IT.
+  # 
+  #   The less splits needed, the unit is more likely to be anomalous.
+  # 
+  # The average number of splits is then used as a score.
+
+  # Calculate score for training dataset
+  score <- h2o.predict( trainingModel, trainingData_hex )
+  result_pred <- as.vector( score$predict )
+
+
+################################################################################
+# Setting threshold value for anomaly detection.
+################################################################################
+
+  # Setting desired yield threshold percentage.
+  yieldThreshold = .99 # Let's say we want a 99% yield
+  
+  # Using yield threshold to get score limit to filter anomalous units.
+  scoreLimit = round( quantile( result_pred, yieldThreshold ), 3 )
+  
+
+  
+################################################################################
+# Get anomalies from testing data, using model and scoreLimit got using training data.
+################################################################################
+
+  # Convert testing data frame to H2O format.
+  testingDataH2O = as.h2o( testingData, destination_frame = "testingData_hex" )
+  
+  # Get score using training model
+  testingScore <- h2o.predict( trainingModel, testingDataH2O )
+
+  # Add row score at the beginning of testing dataset
+  testingData = cbind( RowScore = round( as.vector( testingScore$predict ), 3 ), testingData )
+
+  # Get anomalies from testing data
+  anomalies = testingData[ testingData$RowScore > scoreLimit, ]
+
+  if( dim(anomalies)[1]  > 0 ){
+    
+    cat( "Email to Engineering: Anomalies detected in the sample data, station needs maintenance." )
+    
+    # Plotting anomalies found.  
+    plot( x = row.names(anomalies)
+          , y = anomalies$RowScore
+          , xlab = "Main Dataset Row Number."
+          , ylab = "Anomaly Score"
+          , main = paste0( "Anomalies, Yield Threshold: ", yieldThreshold, ", Score Limit: ", scoreLimit )
+          , pch = 2
+          , cex.main = 1
+          , frame.plot = FALSE
+          , col = "blue", panel.first=grid() )
+  }
+
+
+# Advantages of using this approach:
+  # This is a very fast way to get anomalies.
+  # Very easy to implement,
+  
+
+```
+
+
