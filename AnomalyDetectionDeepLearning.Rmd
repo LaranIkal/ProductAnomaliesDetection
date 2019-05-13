@@ -1,5 +1,5 @@
 ---
-title: "Using R and H2O Isolation Forest to identify product anomalies during the manufacturing process."
+title: "Using R and H2O Deep Learning to identify product anomalies during the manufacturing process."
 author: "Carlos Kassab"
 date: "2019-May-11"
 output: html_document
